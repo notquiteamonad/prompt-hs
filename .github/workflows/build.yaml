@@ -1,0 +1,44 @@
+name: Build
+on:
+  push:
+
+jobs:
+  get-targets:
+    name: Get Targets
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.targets.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: cachix/install-nix-action@v20
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Get Targets
+        id: targets
+        run: printf 'targets=%s\n' "$(nix eval .\#lib.x86_64-linux.targets --json)" >> "$GITHUB_OUTPUT"
+  run-pre-commit-hooks:
+    name: Run pre-commit hooks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: cachix/install-nix-action@v20
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Run pre-commit hooks
+        run: nix build .\#runChecks
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: get-targets
+    strategy:
+      matrix:
+        target: ${{ fromJSON(needs.get-targets.outputs.targets) }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: cachix/install-nix-action@v20
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Build for release
+        env:
+          target: ${{ matrix.target }}
+        run: nix build ".#packages.x86_64-linux.prompt-hs-$target"
