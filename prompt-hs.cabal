@@ -25,6 +25,10 @@ tested-with:
   , GHC == 9.6.6
   , GHC == 9.8.4
 
+source-repository head
+  type: git
+  location: https://github.com/notquiteamonad/prompt-hs
+
 flag prod
   description: Enable production defaults
   manual: True

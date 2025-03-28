@@ -28,6 +28,7 @@ ghc-options:
 - -Wmissing-signatures
 - -Wpartial-fields
 - -Wredundant-constraints
+github: notquiteamonad/prompt-hs
 homepage: "https://github.com/notquiteamonad/prompt-hs"
 library:
   dependencies: []
