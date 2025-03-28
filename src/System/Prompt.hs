@@ -131,7 +131,7 @@ type family PerRequirement (requirement :: SRequirement) (a :: Type) where
   PerRequirement 'SRequired a = a
   PerRequirement 'SOptional a = Maybe a
 
--- Whether to get confirmation from the user before accepting their answer.
+-- | Whether to get confirmation from the user before accepting their answer.
 data Confirmation
   = -- | Get confirmation
     RequireConfirmation
