@@ -10,6 +10,9 @@ description: |
   A library making use of the terminal package to prompt users for answers in a CLI context.
 
   Supports freeform text as well as choices between sum type constructors.
+extra-doc-files:
+  - CHANGELOG.md
+  - README.md
 flags:
   prod:
     default: false
