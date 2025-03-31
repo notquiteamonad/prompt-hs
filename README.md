@@ -2,6 +2,7 @@
 
 A user-friendly, dependently-typed library for asking your users questions
 
+![Hackage Version](https://img.shields.io/hackage/v/prompt-hs)
 [![Made with nix-bootstrap](https://img.shields.io/badge/Made%20with-nix--bootstrap-rgb(58%2C%2095%2C%20168)?style=flat-square&logo=nixos&logoColor=white&link=https://github.com/gchq/nix-bootstrap)](https://github.com/gchq/nix-bootstrap)
 
 ### Table of Contents
