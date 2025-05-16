@@ -36,6 +36,8 @@
 module System.Prompt
   ( -- * Actions
     promptText,
+    promptYesNo,
+    promptYesNoWithDefault,
     promptChoice,
     promptChoiceFromSet,
 
@@ -68,7 +70,7 @@ import System.Terminal
     Event (KeyEvent),
     Interrupt (Interrupt),
     Key (ArrowKey, BackspaceKey, CharKey, EnterKey, EscapeKey),
-    MonadColorPrinter (blue, cyan, foreground, magenta, yellow),
+    MonadColorPrinter (blue, cyan, foreground, magenta, red, yellow),
     MonadFormattingPrinter (bold, italic),
     MonadInput,
     MonadMarkupPrinter (Attribute, resetAttributes, setAttribute),
@@ -258,6 +260,42 @@ promptText requirement confirmation prompt =
           ptsPrompt = prompt,
           ptsRequirement = requirement
         }
+
+-- | Ask the user to enter yes or no.
+--
+-- The answer is given as a Bool - True for yes, False for no.
+--
+-- > promptYesNo Required DontConfirm "Do you see light at the end of the road?"
+promptYesNo ::
+  (result ~ PerRequirement requirement Bool, MonadIO m) =>
+  -- | May they skip the question?
+  Requirement requirement ->
+  -- | Should they be asked to confirm their answer after entering it?
+  Confirmation ->
+  -- | What should the prompt say? (appends [y/n]: automatically)
+  Text ->
+  m result
+promptYesNo requirement confirmation prompt = promptYesNo' requirement confirmation (prompt <> " [y/n]:")
+
+-- | Ask the user to enter yes or no. If they choose not to answer, use the default instead.
+--
+-- The answer is given as a Bool - True for yes, False for no.
+--
+-- > promptYesNo DontConfirm False "Do you see light at the end of the road?"
+promptYesNoWithDefault ::
+  (MonadIO m) =>
+  -- | Should they be asked to confirm their answer after entering it?
+  Confirmation ->
+  -- | The default response
+  Bool ->
+  -- | What should the prompt say? (appends [y/n]: with capitalisation of the default automatically)
+  Text ->
+  m Bool
+promptYesNoWithDefault confirmation def prompt = do
+  let promptSuffix = if def then " [Y/n]:" else " [y/N]:"
+  promptYesNo' Optional confirmation (prompt <> promptSuffix) >>= \case
+    Just yesNo -> pure yesNo
+    Nothing -> pure def
 
 initialPromptChoiceState ::
   (Chooseable (PerRequirement requirement a)) =>
@@ -538,6 +576,48 @@ confirmTextInput s onCancel =
       (Required, _) -> selection
       (Optional, True) -> Nothing
       (Optional, False) -> Just selection
+
+-- | Internal handler for promptYesNo, without appending prompt.
+promptYesNo' ::
+  (result ~ PerRequirement requirement Bool, MonadIO m) =>
+  -- | May they skip the question?
+  Requirement requirement ->
+  -- | Should they be asked to confirm their answer after entering it?
+  Confirmation ->
+  -- | What should the prompt say? (does not append [y/n]: automatically)
+  Text ->
+  m result
+promptYesNo' requirement confirmation prompt = do
+  response <- promptText requirement confirmation prompt
+  case requirement of
+    Required -> case parseYesNo response of
+      Just yesNo -> pure yesNo
+      Nothing -> do
+        liftIO . withTerminal . runTerminalT $ putErrorLn "You must answer yes or no."
+        promptYesNo' requirement confirmation prompt
+    Optional ->
+      case response of
+        Just res -> case parseYesNo res of
+          Just yesNo -> pure $ Just yesNo
+          Nothing -> do
+            liftIO . withTerminal . runTerminalT $ putErrorLn "Answer yes or no, or leave your answer blank to skip the question."
+            promptYesNo' requirement confirmation prompt
+        Nothing ->
+          pure Nothing
+  where
+    parseYesNo :: Text -> Maybe Bool
+    parseYesNo =
+      \case
+        "y" -> Just True
+        "yes" -> Just True
+        "n" -> Just False
+        "no" -> Just False
+        _ -> Nothing
+        . T.toLower
+
+-- | Outputs an error message
+putErrorLn :: (MonadColorPrinter m, MonadFormattingPrinter m) => Text -> m ()
+putErrorLn msg = withAttributes [foreground red, bold] (putTextLn msg) >> flush
 
 -- | Applies the given attributes to the terminal, runs the action,
 -- then resets the terminal's attributes.
