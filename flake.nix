@@ -2,7 +2,6 @@
   description = "Development infrastructure for prompt-hs";
   inputs = {
     nixpkgs-src.url = "github:NixOS/nixpkgs?rev=b62d2a95c72fb068aecd374a7262b37ed92df82b";
-    flake-utils.url = "github:numtide/flake-utils";
     pre-commit-hooks-lib = {
       inputs.nixpkgs.follows = "nixpkgs-src";
       url = "github:cachix/pre-commit-hooks.nix";
@@ -10,12 +9,15 @@
   };
   outputs = {
     nixpkgs-src,
-    flake-utils,
     pre-commit-hooks-lib,
     self,
     ...
-  }:
-    flake-utils.lib.eachSystem (with flake-utils.lib.system; [x86_64-linux aarch64-linux]) (system: let
+  }: let
+    systemsHelpers = import nix/systems.nix;
+    allSystems = nixpkgs-src.lib.platforms.all;
+    supportedSystems = with systemsHelpers.system allSystems; [x86_64-linux aarch64-linux];
+  in
+    systemsHelpers.forEachSystem supportedSystems (system: let
       nixpkgs = nixpkgs-src.legacyPackages.${system};
       preCommitHooks = import nix/pre-commit-hooks.nix {
         inherit pre-commit-hooks-lib nixpkgs system;
