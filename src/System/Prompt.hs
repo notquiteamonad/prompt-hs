@@ -172,6 +172,10 @@ instructionTextMulti = \case
   ChoiceInstructionNormal -> "You can type to search, or use the arrow keys. Press enter to select/deselect, and ctrl+enter to confirm."
   ChoiceInstructionNoOptionSelected -> "No options match this search. Try expanding your filter with backspace to see more options."
 
+class IsPromptChoiceState a where
+  ipcsGetNumberOfOptions :: a -> Int
+  ipcsGetNumberOfFilteredOptions :: a -> Int
+
 data PromptChoiceState (requirement :: SRequirement) (a :: Type) = PromptChoiceState
   { pcsConfirmation :: Confirmation,
     pcsFilter :: Text,
@@ -181,6 +185,10 @@ data PromptChoiceState (requirement :: SRequirement) (a :: Type) = PromptChoiceS
     pcsHoveredOption :: Maybe (PerRequirement requirement a)
   }
 
+instance IsPromptChoiceState (PromptChoiceState requirement a) where
+  ipcsGetNumberOfOptions = length . pcsOptions
+  ipcsGetNumberOfFilteredOptions = length . pcsFilteredOptions
+
 data PromptMultipleChoiceState (a :: Type) = PromptMultipleChoiceState
   { pmcsFilter :: Text,
     pmcsInstruction :: ChoiceInstruction,
@@ -189,6 +197,10 @@ data PromptMultipleChoiceState (a :: Type) = PromptMultipleChoiceState
     pmcsHoveredOption :: Maybe a,
     pmcsSelectedOptions :: [a]
   }
+
+instance IsPromptChoiceState (PromptMultipleChoiceState a) where
+  ipcsGetNumberOfOptions = length . pmcsOptions
+  ipcsGetNumberOfFilteredOptions = length . pmcsFilteredOptions
 
 _pcsFilter :: Lens' (PromptChoiceState requirement a) Text
 _pcsFilter = lens pcsFilter \s x -> s {pcsFilter = x}
@@ -424,7 +436,7 @@ renderPromptChoicePrompt ::
 renderPromptChoicePrompt prompt s = do
   renderPromptLine prompt
   linesRendered <- renderChoiceOptionLines s
-  renderChoiceSummaryLine s linesRendered
+  renderSummaryLine s linesRendered
   renderInstructionLine instructionText $ pcsInstruction s
   renderFilterLine $ pcsFilter s
   pure $ linesRendered + 4
@@ -438,7 +450,7 @@ renderPromptMultipleChoicePrompt ::
 renderPromptMultipleChoicePrompt prompt s = do
   renderPromptLine prompt
   linesRendered <- renderMultipleChoiceOptionLines s
-  renderMultipleChoiceSummaryLine s linesRendered
+  renderSummaryLine s linesRendered
   renderCurrentSelectionsLine s
   renderInstructionLine instructionTextMulti $ pmcsInstruction s
   renderFilterLine $ pmcsFilter s
@@ -450,22 +462,10 @@ renderPrompt = withAttributes [bold, foreground blue] . putText . (<> " ")
 renderPromptLine :: (MonadColorPrinter m, MonadFormattingPrinter m) => Text -> m ()
 renderPromptLine = withAttributes [bold, foreground blue] . putTextLn
 
-renderChoiceSummaryLine :: (Renderable m requirement a) => PromptChoiceState requirement a -> Int -> m ()
-renderChoiceSummaryLine s numberOfOptionsRendered = do
-  let nAll = length $ pcsOptions s
-      nFiltered = length $ pcsFilteredOptions s
-  withAttributes [italic, foreground cyan] . putTextLn $
-    T.pack (show nFiltered)
-      <> "/"
-      <> T.pack (show nAll)
-      <> " included by filter, "
-      <> T.pack (show numberOfOptionsRendered)
-      <> " shown."
-
-renderMultipleChoiceSummaryLine :: (Renderable m 'SRequired a) => PromptMultipleChoiceState a -> Int -> m ()
-renderMultipleChoiceSummaryLine s numberOfOptionsRendered = do
-  let nAll = length $ pmcsOptions s
-      nFiltered = length $ pmcsFilteredOptions s
+renderSummaryLine :: (IsPromptChoiceState s, MonadColorPrinter m, MonadFormattingPrinter m) => s -> Int -> m ()
+renderSummaryLine s numberOfOptionsRendered = do
+  let nAll = ipcsGetNumberOfOptions s
+      nFiltered = ipcsGetNumberOfFilteredOptions s
   withAttributes [italic, foreground cyan] . putTextLn $
     T.pack (show nFiltered)
       <> "/"
