@@ -178,7 +178,7 @@ data PromptChoiceState (requirement :: SRequirement) (a :: Type) = PromptChoiceS
     pcsInstruction :: ChoiceInstruction,
     pcsOptions :: NonEmpty (PerRequirement requirement a),
     pcsFilteredOptions :: [PerRequirement requirement a],
-    pcsSelectedOption :: Maybe (PerRequirement requirement a)
+    pcsHoveredOption :: Maybe (PerRequirement requirement a)
   }
 
 data PromptMultipleChoiceState (a :: Type) = PromptMultipleChoiceState
@@ -208,8 +208,8 @@ _pcsFilteredOptions = lens pcsFilteredOptions \s x -> s {pcsFilteredOptions = x}
 _pmcsFilteredOptions :: Lens' (PromptMultipleChoiceState a) [a]
 _pmcsFilteredOptions = lens pmcsFilteredOptions \s x -> s {pmcsFilteredOptions = x}
 
-_pcsSelectedOption :: Lens' (PromptChoiceState requirement a) (Maybe (PerRequirement requirement a))
-_pcsSelectedOption = lens pcsSelectedOption \s x -> s {pcsSelectedOption = x}
+_pcsHoveredOption :: Lens' (PromptChoiceState requirement a) (Maybe (PerRequirement requirement a))
+_pcsHoveredOption = lens pcsHoveredOption \s x -> s {pcsHoveredOption = x}
 
 _pmcsHoveredOption :: Lens' (PromptMultipleChoiceState a) (Maybe a)
 _pmcsHoveredOption = lens pmcsHoveredOption \s x -> s {pmcsHoveredOption = x}
@@ -354,7 +354,7 @@ initialPromptChoiceState _ confirmation =
       pcsInstruction = ChoiceInstructionNormal,
       pcsOptions = universeChooseableNE,
       pcsFilteredOptions = NE.toList universeChooseableNE,
-      pcsSelectedOption = Just initialSelectionChooseable
+      pcsHoveredOption = Just initialSelectionChooseable
     }
 
 initialPromptChoiceStateFromSet ::
@@ -369,7 +369,7 @@ initialPromptChoiceStateFromSet confirmation options =
       pcsInstruction = ChoiceInstructionNormal,
       pcsOptions = options,
       pcsFilteredOptions = NE.toList options,
-      pcsSelectedOption = Just initialSelectionChooseableItem
+      pcsHoveredOption = Just initialSelectionChooseableItem
     }
 
 initialPromptMultipleChoiceState ::
@@ -489,12 +489,12 @@ renderChoiceOptionLines ::
   PromptChoiceState requirement a ->
   m Int
 renderChoiceOptionLines s = do
-  let (selectedOption, otherOptions) = getVisibleChoiceOptions s
-  case selectedOption of
+  let (hoveredOption, otherOptions) = getVisibleChoiceOptions s
+  case hoveredOption of
     Just o -> withAttributes [bold, foreground yellow] . putTextLn . ("* " <>) $ chooseableItemText o
     Nothing -> pure ()
   forM_ otherOptions (withAttributes [foreground yellow] . putTextLn . ("  " <>) . chooseableItemText)
-  pure $ length otherOptions + maybe 0 (const 1) selectedOption
+  pure $ length otherOptions + maybe 0 (const 1) hoveredOption
 
 renderMultipleChoiceOptionLines ::
   forall a m.
@@ -518,26 +518,26 @@ renderMultipleChoiceOptionLines s = do
           <>
       )
 
--- | Returns a maximum of 6 options, including the one currently selected as the first option.
+-- | Returns a maximum of 6 options, including the one currently hovered as the first option.
 getVisibleChoiceOptions ::
   forall requirement a result.
   (result ~ PerRequirement requirement a, Eq result) =>
   PromptChoiceState requirement a ->
   (Maybe result, [result])
-getVisibleChoiceOptions s = case pcsSelectedOption s of
+getVisibleChoiceOptions s = case pcsHoveredOption s of
   Just o | o `elem` filteredOptions -> (Just o, take 5 $ filter (/= o) filteredOptions)
   _ -> (Nothing, take 6 filteredOptions)
   where
     maxNumberOfOptions :: Int
     maxNumberOfOptions = length $ pcsFilteredOptions s
     filteredOptions :: [result]
-    filteredOptions = take maxNumberOfOptions . dropWhile isNotSelectedOption . cycle $ pcsFilteredOptions s
-    isNotSelectedOption :: result -> Bool
-    isNotSelectedOption o = case pcsSelectedOption s of
+    filteredOptions = take maxNumberOfOptions . dropWhile isNotHoveredOption . cycle $ pcsFilteredOptions s
+    isNotHoveredOption :: result -> Bool
+    isNotHoveredOption o = case pcsHoveredOption s of
       Just target -> o /= target
       Nothing -> False
 
--- | Returns a maximum of 6 options, including the one currently selected as the first option.
+-- | Returns a maximum of 6 options, including the one currently hovered as the first option.
 getVisibleMultipleChoiceOptions :: forall a. (Eq a) => PromptMultipleChoiceState a -> (Maybe a, [a])
 getVisibleMultipleChoiceOptions s = case pmcsHoveredOption s of
   Just o | o `elem` filteredOptions -> (Just o, take 5 $ filter (/= o) filteredOptions)
@@ -575,15 +575,15 @@ handlePromptChoiceEvent prompt linesRendered s e = do
         Upwards ->
           goAgain $
             s
-              { pcsSelectedOption =
+              { pcsHoveredOption =
                   headViaNonEmpty
                     $ drop 1
-                      . dropWhile (maybe (const False) (/=) (pcsSelectedOption s))
+                      . dropWhile (maybe (const False) (/=) (pcsHoveredOption s))
                       . cycle
                       . reverse
                     $ pcsFilteredOptions s
               }
-        Downwards -> goAgain $ s {pcsSelectedOption = headViaNonEmpty . snd $ getVisibleChoiceOptions s}
+        Downwards -> goAgain $ s {pcsHoveredOption = headViaNonEmpty . snd $ getVisibleChoiceOptions s}
         _ -> goAgain s
       BackspaceKey ->
         goAgain $
@@ -593,7 +593,7 @@ handlePromptChoiceEvent prompt linesRendered s e = do
             & _pcsInstruction %~ \case
               ChoiceInstructionNoOptionSelected -> ChoiceInstructionNormal
               currentInstruction -> currentInstruction
-      EnterKey -> case pcsSelectedOption s of
+      EnterKey -> case pcsHoveredOption s of
         Just o -> case pcsConfirmation s of
           RequireConfirmation -> confirmSelection prompt o (chooseableItemText o) (goAgain s)
           DontConfirm -> do
@@ -710,8 +710,8 @@ handlePromptTextEvent s e = do
       _ -> promptTextInternal s
     _ -> promptTextInternal s
 
--- | Applies the filter in `_pcsFilter` to set `_pcsOptions` and update `_pcsSelectedOption`
--- if the previously selected option is no longer included in the filter.
+-- | Applies the filter in `_pcsFilter` to set `_pcsOptions` and update `_pcsHoveredOption`
+-- if the previously hovered option is no longer included in the filter.
 applyFilter ::
   (result ~ PerRequirement requirement a, ChooseableItem result, Eq result) =>
   PromptChoiceState requirement a ->
@@ -723,12 +723,12 @@ applyFilter s =
           (NE.toList $ pcsOptions s)
    in s
         & _pcsFilteredOptions .~ newFilteredOptions
-        & _pcsSelectedOption %~ \case
+        & _pcsHoveredOption %~ \case
           Just o | o `elem` newFilteredOptions -> Just o
           _ -> headViaNonEmpty newFilteredOptions
 
--- | Applies the filter in `_pcsFilter` to set `_pcsOptions` and update `_pcsSelectedOption`
--- if the previously selected option is no longer included in the filter.
+-- | Applies the filter in `_pcsFilter` to set `_pcsOptions` and update `_pcsHoveredOption`
+-- if the previously hovered option is no longer included in the filter.
 applyFilterMultiple ::
   (ChooseableItem a, Eq a) =>
   PromptMultipleChoiceState a ->
