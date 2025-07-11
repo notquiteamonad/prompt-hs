@@ -40,6 +40,7 @@ module System.Prompt
     promptYesNoWithDefault,
     promptChoice,
     promptChoiceFromSet,
+    promptMultipleChoice,
 
     -- * Data
     Chooseable (..),
@@ -151,26 +152,68 @@ instructionText = \case
   ChoiceInstructionNormal -> "You can type to search, or use the arrow keys. Press enter to select."
   ChoiceInstructionNoOptionSelected -> "No option selected. Try expanding your filter with backspace to see more options."
 
+-- | Gets the text which will be displayed to the user for a given instruction.
+instructionTextMulti :: ChoiceInstruction -> Text
+instructionTextMulti = \case
+  ChoiceInstructionNormal -> "You can type to search, or use the arrow keys. Press enter to select/deselect, and ctrl+enter to confirm."
+  ChoiceInstructionNoOptionSelected -> "No options match this search. Try expanding your filter with backspace to see more options."
+
+class IsPromptChoiceState a where
+  ipcsGetNumberOfOptions :: a -> Int
+  ipcsGetNumberOfFilteredOptions :: a -> Int
+
 data PromptChoiceState (requirement :: SRequirement) (a :: Type) = PromptChoiceState
   { pcsConfirmation :: Confirmation,
     pcsFilter :: Text,
     pcsInstruction :: ChoiceInstruction,
     pcsOptions :: NonEmpty (PerRequirement requirement a),
     pcsFilteredOptions :: [PerRequirement requirement a],
-    pcsSelectedOption :: Maybe (PerRequirement requirement a)
+    pcsHoveredOption :: Maybe (PerRequirement requirement a)
   }
+
+instance IsPromptChoiceState (PromptChoiceState requirement a) where
+  ipcsGetNumberOfOptions = length . pcsOptions
+  ipcsGetNumberOfFilteredOptions = length . pcsFilteredOptions
+
+data PromptMultipleChoiceState (a :: Type) = PromptMultipleChoiceState
+  { pmcsFilter :: Text,
+    pmcsInstruction :: ChoiceInstruction,
+    pmcsOptions :: NonEmpty a,
+    pmcsFilteredOptions :: [a],
+    pmcsHoveredOption :: Maybe a,
+    pmcsSelectedOptions :: [a]
+  }
+
+instance IsPromptChoiceState (PromptMultipleChoiceState a) where
+  ipcsGetNumberOfOptions = length . pmcsOptions
+  ipcsGetNumberOfFilteredOptions = length . pmcsFilteredOptions
 
 _pcsFilter :: Lens' (PromptChoiceState requirement a) Text
 _pcsFilter = lens pcsFilter \s x -> s {pcsFilter = x}
 
+_pmcsFilter :: Lens' (PromptMultipleChoiceState a) Text
+_pmcsFilter = lens pmcsFilter \s x -> s {pmcsFilter = x}
+
 _pcsInstruction :: Lens' (PromptChoiceState requirement a) ChoiceInstruction
 _pcsInstruction = lens pcsInstruction \s x -> s {pcsInstruction = x}
+
+_pmcsInstruction :: Lens' (PromptMultipleChoiceState a) ChoiceInstruction
+_pmcsInstruction = lens pmcsInstruction \s x -> s {pmcsInstruction = x}
 
 _pcsFilteredOptions :: Lens' (PromptChoiceState requirement a) [PerRequirement requirement a]
 _pcsFilteredOptions = lens pcsFilteredOptions \s x -> s {pcsFilteredOptions = x}
 
-_pcsSelectedOption :: Lens' (PromptChoiceState requirement a) (Maybe (PerRequirement requirement a))
-_pcsSelectedOption = lens pcsSelectedOption \s x -> s {pcsSelectedOption = x}
+_pmcsFilteredOptions :: Lens' (PromptMultipleChoiceState a) [a]
+_pmcsFilteredOptions = lens pmcsFilteredOptions \s x -> s {pmcsFilteredOptions = x}
+
+_pcsHoveredOption :: Lens' (PromptChoiceState requirement a) (Maybe (PerRequirement requirement a))
+_pcsHoveredOption = lens pcsHoveredOption \s x -> s {pcsHoveredOption = x}
+
+_pmcsHoveredOption :: Lens' (PromptMultipleChoiceState a) (Maybe a)
+_pmcsHoveredOption = lens pmcsHoveredOption \s x -> s {pmcsHoveredOption = x}
+
+_pmcsSelectedOptions :: Lens' (PromptMultipleChoiceState a) [a]
+_pmcsSelectedOptions = lens pmcsSelectedOptions \s x -> s {pmcsSelectedOptions = x}
 
 data PromptTextState (requirement :: SRequirement) = PromptTextState
   { ptsConfirmation :: Confirmation,
@@ -234,6 +277,30 @@ promptChoiceFromSet ::
 promptChoiceFromSet confirmation set prompt =
   liftIO . withTerminal . runTerminalT $
     promptChoiceInternal Proxy prompt (initialPromptChoiceStateFromSet confirmation $ NE.nub set)
+
+-- | Ask the user to choose zero-to-many of the constructors of a sum type.
+--
+-- @
+-- data Colour = Red | Green | Blue deriving (Bounded, Enum, Eq, Show)
+--
+-- instance Chooseable Colour where
+--   showChooseable = Data.Text.pack . show
+--
+-- main :: IO ()
+-- main = do
+--   favouriteColours <- promptMultipleChoice (Proxy :: Proxy Colour) $ "What are your favourite colours?"
+--   print favouriteColours
+-- @
+promptMultipleChoice ::
+  (Chooseable a, Eq a, MonadIO m) =>
+  -- | Proxy of type you want to get back
+  Proxy a ->
+  -- | What should the prompt say? (You need not add a space to the end of this text; one will be added)
+  Text ->
+  m [a]
+promptMultipleChoice pxy prompt =
+  liftIO . withTerminal . runTerminalT $
+    promptMultipleChoiceInternal pxy prompt initialPromptMultipleChoiceState
 
 -- | Ask the user to enter text.
 --
@@ -309,7 +376,7 @@ initialPromptChoiceState _ confirmation =
       pcsInstruction = ChoiceInstructionNormal,
       pcsOptions = universeChooseableNE,
       pcsFilteredOptions = NE.toList universeChooseableNE,
-      pcsSelectedOption = Just initialSelectionChooseable
+      pcsHoveredOption = Just initialSelectionChooseable
     }
 
 initialPromptChoiceStateFromSet ::
@@ -324,7 +391,20 @@ initialPromptChoiceStateFromSet confirmation options =
       pcsInstruction = ChoiceInstructionNormal,
       pcsOptions = options,
       pcsFilteredOptions = NE.toList options,
-      pcsSelectedOption = Just initialSelectionChooseableItem
+      pcsHoveredOption = Just initialSelectionChooseableItem
+    }
+
+initialPromptMultipleChoiceState ::
+  (Chooseable a) =>
+  PromptMultipleChoiceState a
+initialPromptMultipleChoiceState =
+  PromptMultipleChoiceState
+    { pmcsFilter = "",
+      pmcsInstruction = ChoiceInstructionNormal,
+      pmcsOptions = universeChooseableNE,
+      pmcsFilteredOptions = NE.toList universeChooseableNE,
+      pmcsHoveredOption = initialSelectionChooseable,
+      pmcsSelectedOptions = []
     }
 
 promptChoiceInternal ::
@@ -336,6 +416,16 @@ promptChoiceInternal ::
 promptChoiceInternal _ prompt s = do
   linesRendered <- renderPromptChoicePrompt prompt s
   awaitEvent >>= handlePromptChoiceEvent prompt linesRendered s
+
+promptMultipleChoiceInternal ::
+  (MonadInput m, Renderable m 'SRequired a) =>
+  Proxy a ->
+  Text ->
+  PromptMultipleChoiceState a ->
+  m [a]
+promptMultipleChoiceInternal _ prompt s = do
+  linesRendered <- renderPromptMultipleChoicePrompt prompt s
+  awaitEvent >>= handlePromptMultipleChoiceEvent prompt linesRendered s
 
 promptTextInternal ::
   (MonadColorPrinter m, MonadFormattingPrinter m, MonadInput m, MonadScreen m) =>
@@ -355,17 +445,26 @@ renderPromptChoicePrompt ::
   m Int
 renderPromptChoicePrompt prompt s = do
   renderPromptLine prompt
-  linesRendered <- renderOptionLines s
+  linesRendered <- renderChoiceOptionLines s
   renderSummaryLine s linesRendered
-  renderInstructionLine
-  renderFilterLine
+  renderInstructionLine instructionText $ pcsInstruction s
+  renderFilterLine $ pcsFilter s
   pure $ linesRendered + 4
-  where
-    renderInstructionLine = withAttributes [italic] . putTextLn . instructionText $ pcsInstruction s
-    renderFilterLine = do
-      withAttributes [bold, foreground magenta] $ putText "> "
-      putText $ pcsFilter s
-      flush
+
+-- | Renders the prompt for the user and returns the number of lines output
+renderPromptMultipleChoicePrompt ::
+  (Renderable m 'SRequired a) =>
+  Text ->
+  PromptMultipleChoiceState a ->
+  m Int
+renderPromptMultipleChoicePrompt prompt s = do
+  renderPromptLine prompt
+  linesRendered <- renderMultipleChoiceOptionLines s
+  renderSummaryLine s linesRendered
+  renderCurrentSelectionsLine s
+  renderInstructionLine instructionTextMulti $ pmcsInstruction s
+  renderFilterLine $ pmcsFilter s
+  pure $ linesRendered + 5
 
 renderPrompt :: (MonadColorPrinter m, MonadFormattingPrinter m) => Text -> m ()
 renderPrompt = withAttributes [bold, foreground blue] . putText . (<> " ")
@@ -373,10 +472,10 @@ renderPrompt = withAttributes [bold, foreground blue] . putText . (<> " ")
 renderPromptLine :: (MonadColorPrinter m, MonadFormattingPrinter m) => Text -> m ()
 renderPromptLine = withAttributes [bold, foreground blue] . putTextLn
 
-renderSummaryLine :: (Renderable m requirement a) => PromptChoiceState requirement a -> Int -> m ()
+renderSummaryLine :: (IsPromptChoiceState s, MonadColorPrinter m, MonadFormattingPrinter m) => s -> Int -> m ()
 renderSummaryLine s numberOfOptionsRendered = do
-  let nAll = length $ pcsOptions s
-      nFiltered = length $ pcsFilteredOptions s
+  let nAll = ipcsGetNumberOfOptions s
+      nFiltered = ipcsGetNumberOfFilteredOptions s
   withAttributes [italic, foreground cyan] . putTextLn $
     T.pack (show nFiltered)
       <> "/"
@@ -385,37 +484,88 @@ renderSummaryLine s numberOfOptionsRendered = do
       <> T.pack (show numberOfOptionsRendered)
       <> " shown."
 
-renderOptionLines ::
+renderCurrentSelectionsLine :: (ChooseableItem a, MonadColorPrinter m, MonadFormattingPrinter m) => PromptMultipleChoiceState a -> m ()
+renderCurrentSelectionsLine s = do
+  withAttributes [italic, foreground cyan] $ putText "Current Selections: "
+  withAttributes [bold, italic, foreground cyan]
+    . putTextLn
+    . T.intercalate ", "
+    . fmap chooseableItemText
+    $ pmcsSelectedOptions s
+
+renderChoiceOptionLines ::
   forall requirement a m.
   (Renderable m requirement a) =>
   PromptChoiceState requirement a ->
   m Int
-renderOptionLines s = do
-  let (selectedOption, otherOptions) = getVisibleOptions s
-  case selectedOption of
+renderChoiceOptionLines s = do
+  let (hoveredOption, otherOptions) = getVisibleChoiceOptions s
+  case hoveredOption of
     Just o -> withAttributes [bold, foreground yellow] . putTextLn . ("* " <>) $ chooseableItemText o
     Nothing -> pure ()
   forM_ otherOptions (withAttributes [foreground yellow] . putTextLn . ("  " <>) . chooseableItemText)
-  pure $ length otherOptions + maybe 0 (const 1) selectedOption
+  pure $ length otherOptions + maybe 0 (const 1) hoveredOption
 
--- | Returns a maximum of 6 options, including the one currently selected as the first option.
-getVisibleOptions ::
+renderMultipleChoiceOptionLines ::
+  forall a m.
+  (Renderable m 'SRequired a) =>
+  PromptMultipleChoiceState a ->
+  m Int
+renderMultipleChoiceOptionLines s = do
+  let (hoveredOption, otherOptions) = getVisibleMultipleChoiceOptions s
+  case hoveredOption of
+    Just o -> withAttributes [bold, foreground yellow] . putTextLn . ("> " <>) . insertSelectedIndicator o $ chooseableItemText o
+    Nothing -> pure ()
+  forM_ otherOptions (\o -> withAttributes [foreground yellow] . putTextLn . ("  " <>) . insertSelectedIndicator o $ chooseableItemText o)
+  pure $ length otherOptions + maybe 0 (const 1) hoveredOption
+  where
+    insertSelectedIndicator :: a -> Text -> Text
+    insertSelectedIndicator o =
+      ( ( if o `elem` pmcsSelectedOptions s
+            then "[*] "
+            else "[ ] "
+        )
+          <>
+      )
+
+-- | Returns a maximum of 6 options, including the one currently hovered as the first option.
+getVisibleChoiceOptions ::
   forall requirement a result.
   (result ~ PerRequirement requirement a, Eq result) =>
   PromptChoiceState requirement a ->
   (Maybe result, [result])
-getVisibleOptions s = case pcsSelectedOption s of
+getVisibleChoiceOptions s = case pcsHoveredOption s of
   Just o | o `elem` filteredOptions -> (Just o, take 5 $ filter (/= o) filteredOptions)
   _ -> (Nothing, take 6 filteredOptions)
   where
     maxNumberOfOptions :: Int
     maxNumberOfOptions = length $ pcsFilteredOptions s
     filteredOptions :: [result]
-    filteredOptions = take maxNumberOfOptions . dropWhile isNotSelectedOption . cycle $ pcsFilteredOptions s
-    isNotSelectedOption :: result -> Bool
-    isNotSelectedOption o = case pcsSelectedOption s of
+    filteredOptions = take maxNumberOfOptions . dropWhile isNotHoveredOption . cycle $ pcsFilteredOptions s
+    isNotHoveredOption :: result -> Bool
+    isNotHoveredOption o = case pcsHoveredOption s of
       Just target -> o /= target
       Nothing -> False
+
+-- | Returns a maximum of 6 options, including the one currently hovered as the first option.
+getVisibleMultipleChoiceOptions :: forall a. (Eq a) => PromptMultipleChoiceState a -> (Maybe a, [a])
+getVisibleMultipleChoiceOptions s = case pmcsHoveredOption s of
+  Just o | o `elem` filteredOptions -> (Just o, take 5 $ filter (/= o) filteredOptions)
+  _ -> (Nothing, take 6 filteredOptions)
+  where
+    maxNumberOfOptions :: Int
+    maxNumberOfOptions = length $ pmcsFilteredOptions s
+    filteredOptions :: [a]
+    filteredOptions = take maxNumberOfOptions . maybe id (\o -> dropWhile (/= o)) (pmcsHoveredOption s) . cycle $ pmcsFilteredOptions s
+
+renderInstructionLine :: (MonadFormattingPrinter m) => (a -> Text) -> a -> m ()
+renderInstructionLine instructionToText = withAttributes [italic] . putTextLn . instructionToText
+
+renderFilterLine :: (MonadFormattingPrinter m, MonadColorPrinter m) => Text -> m ()
+renderFilterLine f = do
+  withAttributes [bold, foreground magenta] $ putText "> "
+  putText f
+  flush
 
 handlePromptChoiceEvent ::
   forall m requirement a.
@@ -435,15 +585,15 @@ handlePromptChoiceEvent prompt linesRendered s e = do
         Upwards ->
           goAgain $
             s
-              { pcsSelectedOption =
+              { pcsHoveredOption =
                   headViaNonEmpty
                     $ drop 1
-                      . dropWhile (maybe (const False) (/=) (pcsSelectedOption s))
+                      . dropWhile (maybe (const False) (/=) (pcsHoveredOption s))
                       . cycle
                       . reverse
                     $ pcsFilteredOptions s
               }
-        Downwards -> goAgain $ s {pcsSelectedOption = headViaNonEmpty . snd $ getVisibleOptions s}
+        Downwards -> goAgain $ s {pcsHoveredOption = headViaNonEmpty . snd $ getVisibleChoiceOptions s}
         _ -> goAgain s
       BackspaceKey ->
         goAgain $
@@ -453,9 +603,9 @@ handlePromptChoiceEvent prompt linesRendered s e = do
             & _pcsInstruction %~ \case
               ChoiceInstructionNoOptionSelected -> ChoiceInstructionNormal
               currentInstruction -> currentInstruction
-      EnterKey -> case pcsSelectedOption s of
+      EnterKey -> case pcsHoveredOption s of
         Just o -> case pcsConfirmation s of
-          RequireConfirmation -> confirmSelection prompt o (goAgain s)
+          RequireConfirmation -> confirmSelection prompt o (chooseableItemText o) (goAgain s)
           DontConfirm -> do
             renderPrompt prompt
             withAttributes [bold, foreground yellow] . putTextLn $ chooseableItemText o
@@ -473,6 +623,76 @@ handlePromptChoiceEvent prompt linesRendered s e = do
   where
     goAgain :: PromptChoiceState requirement a -> m (PerRequirement requirement a)
     goAgain = promptChoiceInternal Proxy prompt
+
+handlePromptMultipleChoiceEvent ::
+  forall m a.
+  (Renderable m 'SRequired a, MonadInput m) =>
+  Text ->
+  Int ->
+  PromptMultipleChoiceState a ->
+  Either Interrupt Event ->
+  m [a]
+handlePromptMultipleChoiceEvent prompt linesRendered s e = do
+  moveCursorUp (linesRendered - 1)
+  deleteLines linesRendered
+  case e of
+    Left Interrupt -> liftIO exitFailure
+    Right (KeyEvent key modifiers) -> case key of
+      ArrowKey direction -> case direction of
+        Upwards ->
+          goAgain $
+            s
+              { pmcsHoveredOption =
+                  headViaNonEmpty
+                    $ drop 1
+                      . dropWhile (maybe (const False) (/=) (pmcsHoveredOption s))
+                      . cycle
+                      . reverse
+                    $ pmcsFilteredOptions s
+              }
+        Downwards -> goAgain $ s {pmcsHoveredOption = headViaNonEmpty . snd $ getVisibleMultipleChoiceOptions s}
+        _ -> goAgain s
+      BackspaceKey ->
+        goAgain $
+          s
+            & _pmcsFilter %~ T.dropEnd 1
+            & applyFilterMultiple
+            & _pmcsInstruction %~ \case
+              ChoiceInstructionNoOptionSelected -> ChoiceInstructionNormal
+              currentInstruction -> currentInstruction
+      EnterKey ->
+        confirmSelection
+          prompt
+          (pmcsSelectedOptions s)
+          ( if null (pmcsSelectedOptions s)
+              then "[nothing]"
+              else T.intercalate ", " . fmap chooseableItemText $ pmcsSelectedOptions s
+          )
+          (goAgain s)
+      CharKey c
+        | c == ' ' ->
+            goAgain $
+              s
+                & _pmcsSelectedOptions
+                  %~ ( \opts -> case pmcsHoveredOption s of
+                         Just hovered ->
+                           if hovered `elem` opts
+                             then filter (/= hovered) opts
+                             else hovered : opts
+                         Nothing -> opts
+                     )
+      CharKey c ->
+        if modifiers == mempty
+          then
+            if null (pmcsFilteredOptions s)
+              then goAgain $ s {pmcsInstruction = ChoiceInstructionNoOptionSelected}
+              else goAgain $ s & _pmcsFilter %~ flip T.snoc c & applyFilterMultiple
+          else goAgain s
+      _ -> goAgain s
+    _ -> goAgain s
+  where
+    goAgain :: PromptMultipleChoiceState a -> m [a]
+    goAgain = promptMultipleChoiceInternal Proxy prompt
 
 handlePromptTextEvent ::
   (MonadColorPrinter m, MonadFormattingPrinter m, MonadInput m, MonadScreen m) =>
@@ -500,8 +720,8 @@ handlePromptTextEvent s e = do
       _ -> promptTextInternal s
     _ -> promptTextInternal s
 
--- | Applies the filter in `_pcsFilter` to set `_pcsOptions` and update `_pcsSelectedOption`
--- if the previously selected option is no longer included in the filter.
+-- | Applies the filter in `_pcsFilter` to set `_pcsOptions` and update `_pcsHoveredOption`
+-- if the previously hovered option is no longer included in the filter.
 applyFilter ::
   (result ~ PerRequirement requirement a, ChooseableItem result, Eq result) =>
   PromptChoiceState requirement a ->
@@ -513,20 +733,38 @@ applyFilter s =
           (NE.toList $ pcsOptions s)
    in s
         & _pcsFilteredOptions .~ newFilteredOptions
-        & _pcsSelectedOption %~ \case
+        & _pcsHoveredOption %~ \case
+          Just o | o `elem` newFilteredOptions -> Just o
+          _ -> headViaNonEmpty newFilteredOptions
+
+-- | Applies the filter in `_pcsFilter` to set `_pcsOptions` and update `_pcsHoveredOption`
+-- if the previously hovered option is no longer included in the filter.
+applyFilterMultiple ::
+  (ChooseableItem a, Eq a) =>
+  PromptMultipleChoiceState a ->
+  PromptMultipleChoiceState a
+applyFilterMultiple s =
+  let newFilteredOptions =
+        filter
+          ((T.toLower (pmcsFilter s) `T.isInfixOf`) . T.toLower . chooseableItemText)
+          (NE.toList $ pmcsOptions s)
+   in s
+        & _pmcsFilteredOptions .~ newFilteredOptions
+        & _pmcsHoveredOption %~ \case
           Just o | o `elem` newFilteredOptions -> Just o
           _ -> headViaNonEmpty newFilteredOptions
 
 confirmSelection ::
-  (ChooseableItem a, MonadColorPrinter m, MonadFormattingPrinter m, MonadInput m, MonadScreen m) =>
+  (MonadColorPrinter m, MonadFormattingPrinter m, MonadInput m, MonadScreen m) =>
   Text ->
   a ->
+  Text ->
   m a ->
   m a
-confirmSelection prompt selection onCancel = do
+confirmSelection prompt selection selectionText onCancel = do
   renderPromptLine prompt
   withAttributes [bold, foreground cyan] $ putText "You have chosen: "
-  withAttributes [bold, foreground yellow] $ putTextLn (chooseableItemText selection)
+  withAttributes [bold, foreground yellow] $ putTextLn selectionText
   withAttributes [italic] $ putTextLn "Press enter again to confirm, or escape to go back."
   e <- awaitEvent
   moveCursorUp 3 *> deleteLines 4
@@ -534,10 +772,10 @@ confirmSelection prompt selection onCancel = do
     Left Interrupt -> liftIO exitFailure
     Right (KeyEvent EnterKey _) -> do
       renderPrompt prompt
-      withAttributes [bold, foreground yellow] $ putTextLn (chooseableItemText selection)
+      withAttributes [bold, foreground yellow] $ putTextLn selectionText
       pure selection
     Right (KeyEvent EscapeKey _) -> onCancel
-    _ -> confirmSelection prompt selection onCancel
+    _ -> confirmSelection prompt selection selectionText onCancel
 
 confirmTextInput ::
   forall m requirement.
