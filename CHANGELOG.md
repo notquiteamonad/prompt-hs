@@ -19,3 +19,7 @@
 ## Version 1.0.3.1 (2025-07-14)
 
 * Add support for GHC 9.10
+
+## Version 1.1.0.0 (2025-07-14)
+
+* Remove initialSelectionChoosableItem class function; it didn't always have a sensible implementation and isn't needed

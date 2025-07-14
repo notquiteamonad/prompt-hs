@@ -118,15 +118,9 @@ class ChooseableItem a where
   -- | Display the option in a user-friendly manner
   chooseableItemText :: a -> Text
 
-  -- | Get the initially-selected value of `a`
-  initialSelectionChooseableItem :: a
-
 instance (Chooseable a) => ChooseableItem a where
   chooseableItemText :: a -> Text
   chooseableItemText = showChooseable
-
-  initialSelectionChooseableItem :: a
-  initialSelectionChooseableItem = initialSelectionChooseable
 
 -- | Returns `a` if the question is required, or `Maybe` `a` otherwise.
 --
@@ -397,11 +391,7 @@ initialPromptChoiceState _ confirmation =
       pcsHoveredOption = Just initialSelectionChooseable
     }
 
-initialPromptChoiceStateFromSet ::
-  (ChooseableItem a) =>
-  Confirmation ->
-  NonEmpty a ->
-  PromptChoiceState 'SRequired a
+initialPromptChoiceStateFromSet :: Confirmation -> NonEmpty a -> PromptChoiceState 'SRequired a
 initialPromptChoiceStateFromSet confirmation options =
   PromptChoiceState
     { pcsConfirmation = confirmation,
@@ -409,12 +399,10 @@ initialPromptChoiceStateFromSet confirmation options =
       pcsInstruction = ChoiceInstructionNormal,
       pcsOptions = options,
       pcsFilteredOptions = NE.toList options,
-      pcsHoveredOption = Just initialSelectionChooseableItem
+      pcsHoveredOption = Just $ NE.head options
     }
 
-initialPromptMultipleChoiceState ::
-  (Chooseable a) =>
-  PromptMultipleChoiceState a
+initialPromptMultipleChoiceState :: (Chooseable a) => PromptMultipleChoiceState a
 initialPromptMultipleChoiceState =
   PromptMultipleChoiceState
     { pmcsFilter = "",
@@ -425,17 +413,14 @@ initialPromptMultipleChoiceState =
       pmcsSelectedOptions = []
     }
 
-initialPromptMultipleChoiceStateFromSet ::
-  (ChooseableItem a) =>
-  NonEmpty a ->
-  PromptMultipleChoiceState a
+initialPromptMultipleChoiceStateFromSet :: NonEmpty a -> PromptMultipleChoiceState a
 initialPromptMultipleChoiceStateFromSet options =
   PromptMultipleChoiceState
     { pmcsFilter = "",
       pmcsInstruction = ChoiceInstructionNormal,
       pmcsOptions = options,
       pmcsFilteredOptions = NE.toList options,
-      pmcsHoveredOption = Just initialSelectionChooseableItem,
+      pmcsHoveredOption = Just $ NE.head options,
       pmcsSelectedOptions = []
     }
 
