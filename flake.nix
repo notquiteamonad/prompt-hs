@@ -22,7 +22,7 @@
       preCommitHooks = import nix/pre-commit-hooks.nix {
         inherit pre-commit-hooks-lib nixpkgs system;
       };
-      targets = builtins.map (target: "ghc" + target) ["810" "90" "92" "94" "96" "98"];
+      targets = builtins.map (target: "ghc" + target) ["810" "90" "92" "94" "96" "98" "910"];
       currentTarget = nixpkgs.lib.lists.last targets;
       haskellPackagesFor = target: nixpkgs.haskell.packages.${target};
       haskellEnv = (haskellPackagesFor currentTarget).ghcWithPackages (pkgs: with pkgs; [cabal-install haskell-language-server]);

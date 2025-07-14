@@ -5,7 +5,7 @@ cabal-version: 2.2
 -- see: https://github.com/sol/hpack
 
 name:           prompt-hs
-version:        1.0.3.0
+version:        1.0.3.1
 synopsis:       A user-friendly, dependently-typed library for asking your users questions
 description:    A library making use of the terminal package to prompt users for answers in a CLI context.
                 .
@@ -24,6 +24,7 @@ tested-with:
   , GHC == 9.4.8
   , GHC == 9.6.6
   , GHC == 9.8.4
+  , GHC == 9.10.1
 extra-doc-files:
     CHANGELOG.md
     README.md
