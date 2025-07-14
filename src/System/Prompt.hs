@@ -41,6 +41,7 @@ module System.Prompt
     promptChoice,
     promptChoiceFromSet,
     promptMultipleChoice,
+    promptMultipleChoiceFromSet,
 
     -- * Data
     Chooseable (..),
@@ -302,6 +303,23 @@ promptMultipleChoice pxy prompt =
   liftIO . withTerminal . runTerminalT $
     promptMultipleChoiceInternal pxy prompt initialPromptMultipleChoiceState
 
+-- | Ask the user to choose zero-to-many of some arbitrary options.
+--
+-- Note: duplicate options will be removed.
+promptMultipleChoiceFromSet ::
+  (ChooseableItem a, Eq a, MonadIO m) =>
+  -- | The items from which they can choose
+  NonEmpty a ->
+  -- | What should the prompt say? (You need not add a space to the end of this text; one will be added)
+  Text ->
+  m [a]
+promptMultipleChoiceFromSet options prompt =
+  liftIO
+    . withTerminal
+    . runTerminalT
+    . promptMultipleChoiceInternal Proxy prompt
+    $ initialPromptMultipleChoiceStateFromSet options
+
 -- | Ask the user to enter text.
 --
 -- The answer is stripped of leading and trailing whitespace.
@@ -404,6 +422,20 @@ initialPromptMultipleChoiceState =
       pmcsOptions = universeChooseableNE,
       pmcsFilteredOptions = NE.toList universeChooseableNE,
       pmcsHoveredOption = initialSelectionChooseable,
+      pmcsSelectedOptions = []
+    }
+
+initialPromptMultipleChoiceStateFromSet ::
+  (ChooseableItem a) =>
+  NonEmpty a ->
+  PromptMultipleChoiceState a
+initialPromptMultipleChoiceStateFromSet options =
+  PromptMultipleChoiceState
+    { pmcsFilter = "",
+      pmcsInstruction = ChoiceInstructionNormal,
+      pmcsOptions = options,
+      pmcsFilteredOptions = NE.toList options,
+      pmcsHoveredOption = Just initialSelectionChooseableItem,
       pmcsSelectedOptions = []
     }
 
