@@ -150,7 +150,7 @@ instructionText = \case
 -- | Gets the text which will be displayed to the user for a given instruction.
 instructionTextMulti :: ChoiceInstruction -> Text
 instructionTextMulti = \case
-  ChoiceInstructionNormal -> "You can type to search, or use the arrow keys. Press enter to select/deselect, and ctrl+enter to confirm."
+  ChoiceInstructionNormal -> "You can type to search, or use the arrow keys. Press space to select/deselect, and enter to confirm."
   ChoiceInstructionNoOptionSelected -> "No options match this search. Try expanding your filter with backspace to see more options."
 
 class IsPromptChoiceState a where
