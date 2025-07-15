@@ -22,4 +22,4 @@
 
 ## Version 1.1.0.0 (2025-07-14)
 
-* Remove initialSelectionChoosableItem class function; it didn't always have a sensible implementation and isn't needed
+* **BREAKING:** Remove initialSelectionChoosableItem class function; it didn't always have a sensible implementation and isn't needed
