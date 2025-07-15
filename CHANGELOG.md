@@ -23,3 +23,7 @@
 ## Version 1.1.0.0 (2025-07-14)
 
 * **BREAKING:** Remove initialSelectionChoosableItem class function; it didn't always have a sensible implementation and isn't needed
+
+## Version 1.1.0.1 (2025-07-15)
+
+* Fix prompt text when prompting multiple choice to give buttons actually used
