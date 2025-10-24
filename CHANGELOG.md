@@ -27,3 +27,7 @@
 ## Version 1.1.0.1 (2025-07-15)
 
 * Fix prompt text when prompting multiple choice to give buttons actually used
+ 
+## Version 1.1.0.2 (2025-10-24)
+
+* Widen microlens dependency version bounds

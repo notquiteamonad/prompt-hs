@@ -3,7 +3,7 @@ bug-reports: "https://github.com/notquiteamonad/prompt-hs/issues"
 category: CLI
 dependencies:
   - base >= 4.14.3.0 && < 5
-  - microlens >= 0.4.0.1 && < 0.5
+  - microlens >= 0.4.0.1 && < 0.6
   - terminal >= 0.2 && < 0.3
   - text >= 1.2.4.1 && < 2.2
 description: |
@@ -47,7 +47,7 @@ tested-with:
   - GHC == 9.6.6
   - GHC == 9.8.4
   - GHC == 9.10.1
-version: 1.1.0.1
+version: 1.1.0.2
 when:
 - condition: flag(prod)
   ghc-options:
