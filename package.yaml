@@ -45,7 +45,7 @@ tested-with:
   - GHC == 9.8.4
   - GHC == 9.10.3
   - GHC == 9.12.3
-version: 1.1.0.3
+version: 1.1.1.0
 when:
   - condition: flag(prod)
     ghc-options:

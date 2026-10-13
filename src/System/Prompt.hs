@@ -617,9 +617,7 @@ handlePromptChoiceEvent prompt linesRendered s e = do
           s
             & _pcsFilter %~ T.dropEnd 1
             & applyFilter
-            & _pcsInstruction %~ \case
-              ChoiceInstructionNoOptionSelected -> ChoiceInstructionNormal
-              currentInstruction -> currentInstruction
+            & _pcsInstruction %~ clearNoOptionSelectedState
       EnterKey -> case pcsHoveredOption s of
         Just o -> case pcsConfirmation s of
           RequireConfirmation -> confirmSelection prompt o (chooseableItemText o) (goAgain s)
@@ -634,7 +632,21 @@ handlePromptChoiceEvent prompt linesRendered s e = do
             if null (pcsFilteredOptions s)
               then goAgain $ s {pcsInstruction = ChoiceInstructionNoOptionSelected}
               else goAgain $ s & _pcsFilter %~ flip T.snoc c & applyFilter
-          else goAgain s
+          else case c of
+            'U'
+              | modifiers == ctrlKey ->
+                  goAgain $
+                    s {pcsFilter = ""}
+                      & applyFilter
+                      & _pcsInstruction %~ clearNoOptionSelectedState
+            'W'
+              | modifiers == ctrlKey ->
+                  goAgain $
+                    s
+                      & _pcsFilter %~ deleteLastWord
+                      & applyFilter
+                      & _pcsInstruction %~ clearNoOptionSelectedState
+            _ -> goAgain s
       _ -> goAgain s
     _ -> goAgain s
   where
@@ -674,9 +686,7 @@ handlePromptMultipleChoiceEvent prompt linesRendered s e = do
           s
             & _pmcsFilter %~ T.dropEnd 1
             & applyFilterMultiple
-            & _pmcsInstruction %~ \case
-              ChoiceInstructionNoOptionSelected -> ChoiceInstructionNormal
-              currentInstruction -> currentInstruction
+            & _pmcsInstruction %~ clearNoOptionSelectedState
       EnterKey ->
         confirmSelection
           prompt
@@ -704,7 +714,21 @@ handlePromptMultipleChoiceEvent prompt linesRendered s e = do
             if null (pmcsFilteredOptions s)
               then goAgain $ s {pmcsInstruction = ChoiceInstructionNoOptionSelected}
               else goAgain $ s & _pmcsFilter %~ flip T.snoc c & applyFilterMultiple
-          else goAgain s
+          else case c of
+            'U'
+              | modifiers == ctrlKey ->
+                  goAgain $
+                    s {pmcsFilter = ""}
+                      & applyFilterMultiple
+                      & _pmcsInstruction %~ clearNoOptionSelectedState
+            'W'
+              | modifiers == ctrlKey ->
+                  goAgain $
+                    s
+                      & _pmcsFilter %~ deleteLastWord
+                      & applyFilterMultiple
+                      & _pmcsInstruction %~ clearNoOptionSelectedState
+            _ -> goAgain s
       _ -> goAgain s
     _ -> goAgain s
   where
@@ -732,7 +756,8 @@ handlePromptTextEvent s e = do
                   promptTextInternal $ s {ptsCurrentInput = ""}
             'W'
               | modifiers == ctrlKey ->
-                  promptTextInternal $ s & _ptsCurrentInput %~ (T.dropWhile C.isSpace . T.dropWhileEnd (not . C.isSpace))
+                  promptTextInternal $
+                    s & _ptsCurrentInput %~ deleteLastWord
             _ -> promptTextInternal s
       _ -> promptTextInternal s
     _ -> promptTextInternal s
@@ -891,3 +916,15 @@ headViaNonEmpty =
     Just (x :| _) -> Just x
     Nothing -> Nothing
     . NE.nonEmpty
+
+-- | If the input instruction is `ChoiceInstructionNoOptionSelected`, set it to `ChoiceInstructionNormal`.
+--
+-- Otherwise, leave it unchanged.
+clearNoOptionSelectedState :: ChoiceInstruction -> ChoiceInstruction
+clearNoOptionSelectedState = \case
+  ChoiceInstructionNoOptionSelected -> ChoiceInstructionNormal
+  currentInstruction -> currentInstruction
+
+-- | Delete the last word (vim WORD) from the text.
+deleteLastWord :: Text -> Text
+deleteLastWord = T.dropWhileEnd (not . C.isSpace) . T.dropWhileEnd C.isSpace
