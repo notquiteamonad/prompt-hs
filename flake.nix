@@ -1,7 +1,7 @@
 {
   description = "Development infrastructure for prompt-hs";
   inputs = {
-    nixpkgs-src.url = "github:NixOS/nixpkgs?rev=b62d2a95c72fb068aecd374a7262b37ed92df82b";
+    nixpkgs-src.url = "nixpkgs/26.05";
     pre-commit-hooks-lib = {
       inputs.nixpkgs.follows = "nixpkgs-src";
       url = "github:cachix/pre-commit-hooks.nix";
@@ -22,7 +22,7 @@
       preCommitHooks = import nix/pre-commit-hooks.nix {
         inherit pre-commit-hooks-lib nixpkgs system;
       };
-      targets = builtins.map (target: "ghc" + target) ["810" "90" "92" "94" "96" "98" "910"];
+      targets = builtins.map (target: "ghc" + target) ["810" "90" "92" "94" "96" "98" "910" "912"];
       currentTarget = nixpkgs.lib.lists.last targets;
       haskellPackagesFor = target: nixpkgs.haskell.packages.${target};
       haskellEnv = (haskellPackagesFor currentTarget).ghcWithPackages (pkgs: with pkgs; [cabal-install haskell-language-server]);
