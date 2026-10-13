@@ -52,7 +52,7 @@ module System.Prompt
   )
 where
 
-import Control.Monad (forM_)
+import Control.Monad (forM_, when)
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import qualified Data.Char as C
 import Data.Kind (Type)
@@ -77,7 +77,7 @@ import System.Terminal
     MonadInput,
     MonadMarkupPrinter (Attribute, resetAttributes, setAttribute),
     MonadPrinter (flush, putText, putTextLn),
-    MonadScreen (deleteLines, moveCursorUp),
+    MonadScreen (deleteLines, moveCursorUp, setCursorColumn),
     awaitEvent,
     ctrlKey,
     runTerminalT,
@@ -593,8 +593,7 @@ handlePromptChoiceEvent ::
   Either Interrupt Event ->
   m (PerRequirement requirement a)
 handlePromptChoiceEvent prompt linesRendered s e = do
-  moveCursorUp (linesRendered - 1)
-  deleteLines linesRendered
+  clearRenderedLines linesRendered
   case e of
     Left Interrupt -> liftIO exitFailure
     Right (KeyEvent key modifiers) -> case key of
@@ -662,8 +661,7 @@ handlePromptMultipleChoiceEvent ::
   Either Interrupt Event ->
   m [a]
 handlePromptMultipleChoiceEvent prompt linesRendered s e = do
-  moveCursorUp (linesRendered - 1)
-  deleteLines linesRendered
+  clearRenderedLines linesRendered
   case e of
     Left Interrupt -> liftIO exitFailure
     Right (KeyEvent key modifiers) -> case key of
@@ -741,7 +739,7 @@ handlePromptTextEvent ::
   Either Interrupt Event ->
   m (PerRequirement requirement Text)
 handlePromptTextEvent s e = do
-  deleteLines 1
+  clearRenderedLines 1
   case e of
     Left Interrupt -> liftIO exitFailure
     Right (KeyEvent key modifiers) -> case key of
@@ -809,7 +807,7 @@ confirmSelection prompt selection selectionText onCancel = do
   withAttributes [bold, foreground yellow] $ putTextLn selectionText
   withAttributes [italic] $ putTextLn "Press enter again to confirm, or escape to go back."
   e <- awaitEvent
-  moveCursorUp 3 *> deleteLines 4
+  clearRenderedLines 4
   case e of
     Left Interrupt -> liftIO exitFailure
     Right (KeyEvent EnterKey _) -> do
@@ -833,7 +831,7 @@ confirmTextInput s onCancel =
         writePromptWithResponse
         withAttributes [italic] $ putTextLn "Press enter again to confirm, or escape to go back."
         e <- awaitEvent
-        moveCursorUp 2 *> deleteLines 3
+        clearRenderedLines 3
         case e of
           Left Interrupt -> liftIO exitFailure
           Right (KeyEvent EnterKey _) -> do
@@ -898,6 +896,13 @@ promptYesNo' requirement confirmation prompt = do
 -- | Outputs an error message
 putErrorLn :: (MonadColorPrinter m, MonadFormattingPrinter m) => Text -> m ()
 putErrorLn msg = withAttributes [foreground red, bold] (putTextLn msg) >> flush
+
+-- | Clears `n` lines upwards and resets the cursor to the first column.
+clearRenderedLines :: (MonadScreen m) => Int -> m ()
+clearRenderedLines n = do
+  when (n > 1) $ moveCursorUp (n - 1)
+  deleteLines n
+  setCursorColumn 0
 
 -- | Applies the given attributes to the terminal, runs the action,
 -- then resets the terminal's attributes.
